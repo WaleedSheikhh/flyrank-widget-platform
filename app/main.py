@@ -15,6 +15,8 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 
+from app.geo import enrich_ip
+
 
 Base.metadata.create_all(bind=engine)
 
@@ -196,14 +198,14 @@ def delete_widget(widget_id: int, current=Depends(get_current_user), db: Session
     db.commit()
 
 
+
 @app.post("/submissions", status_code=201, response_model=SubmissionOut)
 @limiter.limit("5/minute")
-def create_submission(submission: SubmissionCreate, request: Request, db: Session = Depends(get_db)):
+async def create_submission(submission: SubmissionCreate, request: Request, db: Session = Depends(get_db)):
     widget = db.query(Widget).filter(Widget.id == submission.widget_id).first()
     if not widget:
         raise HTTPException(status_code=404, detail=f"Widget {submission.widget_id} not found")
 
-    # honeypot: a hidden field real users never fill, bots often do
     if submission.data.get("website"):
         raise HTTPException(status_code=400, detail="Submission rejected")
 
@@ -211,11 +213,17 @@ def create_submission(submission: SubmissionCreate, request: Request, db: Sessio
     if len(json.dumps(submission.data)) > 5000:
         raise HTTPException(status_code=413, detail="Submission payload too large")
 
+    client_ip = request.client.host if request.client else None
+    country, city, geo_provider_used = await enrich_ip(client_ip)
+
     new_submission = Submission(
         widget_id=widget.id,
         tenant_id=widget.tenant_id,
         data=submission.data,
-        ip_address=request.client.host if request.client else None,
+        ip_address=client_ip,
+        country=country,
+        city=city,
+        geo_provider_used=geo_provider_used,
     )
     db.add(new_submission)
     db.commit()
@@ -225,4 +233,7 @@ def create_submission(submission: SubmissionCreate, request: Request, db: Sessio
         id=new_submission.id,
         widget_id=new_submission.widget_id,
         created_at=new_submission.created_at.isoformat(),
+        country=new_submission.country,
+        city=new_submission.city,
+        geo_provider_used=new_submission.geo_provider_used,
     )

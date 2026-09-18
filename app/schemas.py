@@ -49,6 +49,9 @@ class SubmissionOut(BaseModel):
     id: int
     widget_id: int
     created_at: str
+    country: Optional[str] = None
+    city: Optional[str] = None
+    geo_provider_used: Optional[str] = None
 
     class Config:
         from_attributes = True
