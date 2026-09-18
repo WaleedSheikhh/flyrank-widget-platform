@@ -34,6 +34,7 @@ class WidgetOut(BaseModel):
     fields: List[WidgetField]
     button_text: str
     display_options: Dict[str, Any]
+    embed_snippet: Optional[str] = None
 
     class Config:
         from_attributes = True
