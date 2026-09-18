@@ -1,18 +1,26 @@
-from fastapi import FastAPI, HTTPException, Depends, Response
+from fastapi import FastAPI, HTTPException, Depends, Response, Request
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import HTTPException as FastAPIHTTPException
 from sqlalchemy.orm import Session
 
 from app.database import engine, SessionLocal
-from app.models import Base, Widget
-from app.schemas import WidgetCreate, WidgetUpdate, WidgetOut
+from app.models import Base, Widget, Submission
+from app.schemas import WidgetCreate, WidgetUpdate, WidgetOut, SubmissionCreate, SubmissionOut
 from app.auth_dependency import get_current_user
+from fastapi.middleware.cors import CORSMiddleware
 
 import os
 
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["*"],
+)
 
 
 @app.exception_handler(FastAPIHTTPException)
@@ -176,3 +184,31 @@ def delete_widget(widget_id: int, current=Depends(get_current_user), db: Session
         raise HTTPException(status_code=404, detail=f"Widget {widget_id} not found")
     db.delete(widget)
     db.commit()
+
+
+@app.post("/submissions", status_code=201, response_model=SubmissionOut)
+def create_submission(submission: SubmissionCreate, request: Request, db: Session = Depends(get_db)):
+    widget = db.query(Widget).filter(Widget.id == submission.widget_id).first()
+    if not widget:
+        raise HTTPException(status_code=404, detail=f"Widget {submission.widget_id} not found")
+
+    # basic payload size guard
+    import json
+    if len(json.dumps(submission.data)) > 5000:
+        raise HTTPException(status_code=413, detail="Submission payload too large")
+
+    new_submission = Submission(
+        widget_id=widget.id,
+        tenant_id=widget.tenant_id,
+        data=submission.data,
+        ip_address=request.client.host if request.client else None,
+    )
+    db.add(new_submission)
+    db.commit()
+    db.refresh(new_submission)
+
+    return SubmissionOut(
+        id=new_submission.id,
+        widget_id=new_submission.widget_id,
+        created_at=new_submission.created_at.isoformat(),
+    )

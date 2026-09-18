@@ -38,3 +38,17 @@ class WidgetOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class SubmissionCreate(BaseModel):
+    widget_id: int
+    data: Dict[str, Any]
+
+
+class SubmissionOut(BaseModel):
+    id: int
+    widget_id: int
+    created_at: str
+
+    class Config:
+        from_attributes = True
