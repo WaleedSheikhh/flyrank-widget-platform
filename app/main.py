@@ -39,8 +39,67 @@ def root():
 
 
 @app.get("/health")
-def health_check():
+def health():
     return {"status": "ok"}
+
+
+WIDGET_JS_VERSION = "v1"
+
+WIDGET_JS_CONTENT = """
+(function() {
+  const script = document.currentScript;
+  const widgetId = new URLSearchParams(script.src.split('?')[1]).get('id');
+  const apiBase = script.src.split('/widget.js')[0];
+
+  fetch(apiBase + '/widgets/' + widgetId + '/config')
+    .then(res => res.json())
+    .then(config => {
+      const container = document.createElement('div');
+      container.style.cssText = 'border:1px solid #ccc; padding:16px; border-radius:8px; max-width:300px; font-family:sans-serif;';
+
+      const title = document.createElement('h3');
+      title.textContent = config.title;
+      container.appendChild(title);
+
+      const form = document.createElement('form');
+      config.fields.forEach(field => {
+        const input = document.createElement('input');
+        input.type = field.type;
+        input.name = field.name;
+        input.placeholder = field.name;
+        input.required = field.required;
+        input.style.cssText = 'display:block; width:100%; margin-bottom:8px; padding:6px;';
+        form.appendChild(input);
+      });
+
+      const button = document.createElement('button');
+      button.type = 'submit';
+      button.textContent = config.button_text;
+      form.appendChild(button);
+
+      form.addEventListener('submit', function(e) {
+        e.preventDefault();
+        const data = Object.fromEntries(new FormData(form));
+        fetch(apiBase + '/submissions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ widget_id: parseInt(widgetId), data: data })
+        }).then(() => {
+          form.innerHTML = '<p>Thank you!</p>';
+        });
+      });
+
+      container.appendChild(form);
+      script.parentNode.insertBefore(container, script);
+    });
+})();
+"""
+
+@app.get("/widget.js")
+def get_widget_js(response: Response):
+    response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+    response.headers["Content-Type"] = "application/javascript"
+    return Response(content=WIDGET_JS_CONTENT, media_type="application/javascript", headers=response.headers)
 
 
 @app.post("/widgets", status_code=201, response_model=WidgetOut)
