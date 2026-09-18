@@ -16,6 +16,8 @@ from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 
 from app.geo import enrich_ip
+from app.notifications import send_confirmation
+
 
 
 Base.metadata.create_all(bind=engine)
@@ -228,6 +230,8 @@ async def create_submission(submission: SubmissionCreate, request: Request, db: 
     db.add(new_submission)
     db.commit()
     db.refresh(new_submission)
+
+    send_confirmation(new_submission.id, new_submission.widget_id, submission.data)
 
     return SubmissionOut(
         id=new_submission.id,
