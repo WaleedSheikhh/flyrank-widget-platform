@@ -2,6 +2,7 @@ from fastapi import FastAPI, HTTPException, Depends, Response, Request
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import HTTPException as FastAPIHTTPException
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 
 from app.database import engine, SessionLocal
 from app.models import Base, Widget, Submission
@@ -17,6 +18,7 @@ from slowapi.errors import RateLimitExceeded
 
 from app.geo import enrich_ip
 from app.notifications import send_confirmation
+from app.schemas import SubmissionListItem, DashboardStatsOut, DailyCount, WidgetStat, CountryStat
 
 
 
@@ -240,4 +242,83 @@ async def create_submission(submission: SubmissionCreate, request: Request, db: 
         country=new_submission.country,
         city=new_submission.city,
         geo_provider_used=new_submission.geo_provider_used,
+    )
+
+
+@app.get("/dashboard/submissions", response_model=list[SubmissionListItem])
+def list_submissions(
+    limit: int = 50,
+    offset: int = 0,
+    current=Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    user, token = current
+    submissions = (
+        db.query(Submission)
+        .filter(Submission.tenant_id == user.id)
+        .order_by(Submission.created_at.desc())
+        .offset(offset)
+        .limit(limit)
+        .all()
+    )
+    return [
+        SubmissionListItem(
+            id=s.id,
+            widget_id=s.widget_id,
+            data=s.data,
+            country=s.country,
+            city=s.city,
+            created_at=s.created_at.isoformat(),
+        )
+        for s in submissions
+    ]
+
+
+@app.get("/dashboard/stats", response_model=DashboardStatsOut)
+def dashboard_stats(current=Depends(get_current_user), db: Session = Depends(get_db)):
+    user, token = current
+
+    total = db.query(Submission).filter(Submission.tenant_id == user.id).count()
+
+    day_rows = (
+        db.query(
+            func.date(Submission.created_at).label("day"),
+            func.count(Submission.id).label("count"),
+        )
+        .filter(Submission.tenant_id == user.id)
+        .group_by(func.date(Submission.created_at))
+        .order_by(func.date(Submission.created_at))
+        .all()
+    )
+
+    widget_rows = (
+        db.query(
+            Widget.id.label("widget_id"),
+            Widget.title.label("widget_title"),
+            func.count(Submission.id).label("submission_count"),
+        )
+        .join(Submission, Submission.widget_id == Widget.id)
+        .filter(Submission.tenant_id == user.id)
+        .group_by(Widget.id, Widget.title)
+        .all()
+    )
+
+    country_rows = (
+        db.query(
+            Submission.country.label("country"),
+            func.count(Submission.id).label("count"),
+        )
+        .filter(Submission.tenant_id == user.id)
+        .group_by(Submission.country)
+        .all()
+    )
+
+    return DashboardStatsOut(
+        total_submissions=total,
+        by_day=[DailyCount(day=str(r.day), count=r.count) for r in day_rows],
+        by_widget=[
+            WidgetStat(widget_id=r.widget_id, widget_title=r.widget_title, submission_count=r.submission_count)
+            for r in widget_rows
+        ],
+        by_country=[CountryStat(country=r.country, count=r.count) for r in country_rows],
     )

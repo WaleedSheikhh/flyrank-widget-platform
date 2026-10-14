@@ -55,3 +55,38 @@ class SubmissionOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class SubmissionListItem(BaseModel):
+    id: int
+    widget_id: int
+    data: Dict[str, Any]
+    country: Optional[str] = None
+    city: Optional[str] = None
+    created_at: str
+
+    class Config:
+        from_attributes = True
+
+
+class DailyCount(BaseModel):
+    day: str
+    count: int
+
+
+class WidgetStat(BaseModel):
+    widget_id: int
+    widget_title: str
+    submission_count: int
+
+
+class CountryStat(BaseModel):
+    country: Optional[str] = None  # None = no geo data (both providers failed or unavailable)
+    count: int
+
+
+class DashboardStatsOut(BaseModel):
+    total_submissions: int
+    by_day: List[DailyCount]
+    by_widget: List[WidgetStat]
+    by_country: List[CountryStat]
